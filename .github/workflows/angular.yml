@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # NEW:（可選）避免無限等待
+    timeout-minutes: 20  # NEW
 
     steps:
       - name: Checkout
@@ -31,20 +33,31 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadless || echo "no tests"
 
       - name: Build for production
+        # NEW:（可選）給 build 多點記憶體；保留你的 base-href
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096   # NEW
         run: npm run build -- --configuration production --base-href=/${{ github.event.repository.name }}/
 
-      - name: Create 404.html for SPA
-        run: |
-          OUT=dist/$(node -p "require('./angular.json').defaultProject")/browser
-          cp $OUT/index.html $OUT/404.html
+      # NEW: 自動偵測 angular.json 的 outputPath（不再依賴 defaultProject，也不假設有 /browser）
+      - name: Detect dist path  # NEW
+        id: dist               # NEW
+        run: |                 # NEW
+          OUT=$(node -e "const a=require('./angular.json');const k=Object.keys(a.projects)[0];process.stdout.write(a.projects[k].architect.build.options.outputPath)")
+          echo "out=$OUT" >> $GITHUB_OUTPUT
+
+      # FIX: 用偵測到的 outputPath 來建立 404.html（修正原本使用 defaultProject 與 /browser 導致的 undefined）
+      - name: Create 404.html for SPA  # FIX
+        run: |                         # FIX
+          cp "${{ steps.dist.outputs.out }}/index.html" "${{ steps.dist.outputs.out }}/404.html"
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload artifact
+      # FIX: 上傳 artifact 的路徑改用偵測到的 outputPath（不再硬寫 /browser）
+      - name: Upload artifact           # FIX
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/${{ github.event.repository.name }}/browser
+          path: ${{ steps.dist.outputs.out }}   # FIX
 
   deploy:
     needs: build
@@ -54,9 +67,9 @@ jobs:
       id-token: write
     environment:
       name: github-pages
+      #（保持原樣）
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
