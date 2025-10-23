@@ -5,12 +5,13 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # 手動觸發
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20   # NEW：避免無限等待
+    # NEW:（可選）避免無限等待
+    timeout-minutes: 20  # NEW
 
     steps:
       - name: Checkout
@@ -32,26 +33,22 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadless || echo "no tests"
 
       - name: Build for production
+        # NEW:（可選）給 build 多點記憶體；保留你的 base-href
         env:
-          NODE_OPTIONS: --max_old_space_size=4096   # NEW：避免 OOM
-        run: |
-          npm run build -- --configuration production --base-href=/${{ github.event.repository.name }}/
+          NODE_OPTIONS: --max_old_space_size=4096   # NEW
+        run: npm run build -- --configuration production --base-href=/${{ github.event.repository.name }}/
 
-      # NEW：讀 angular.json 的 outputPath（不依賴 defaultProject）
-      - name: Detect outputPath from angular.json   # NEW
-        id: dist_base                              # NEW
-        run: |
+      # NEW: 自動偵測 angular.json 的 outputPath（不再依賴 defaultProject，也不假設有 /browser）
+      - name: Detect dist path  # NEW
+        id: dist               # NEW
+        run: |                 # NEW
           OUT=$(node -e "const a=require('./angular.json');const k=Object.keys(a.projects)[0];process.stdout.write(a.projects[k].architect.build.options.outputPath)")
           echo "out=$OUT" >> $GITHUB_OUTPUT
-          echo "Detected outputPath: $OUT"
-          echo "::group::dist tree (base)"; ls -la "$OUT" || true; echo "::endgroup::"
-          echo "::group::dist tree (base/browser)"; ls -la "$OUT/browser" || true; echo "::endgroup::"
 
-      # FIX：若存在 /browser 就用它；否則用 base 路徑
-      - name: Resolve final dist directory          # FIX
-        id: dist_final                              # FIX
+      - name: Resolve final dist directory   # FIX：決定要用 base 還是 /browser
+        id: dist_final
         run: |
-          BASE="${{ steps.dist_base.outputs.out }}"
+          BASE="${{ steps.dist.outputs.out }}"
           if [ -d "$BASE/browser" ]; then
             DIR="$BASE/browser"
           else
@@ -59,27 +56,20 @@ jobs:
           fi
           echo "dir=$DIR" >> $GITHUB_OUTPUT
           echo "Final dist dir: $DIR"
+          ls -la "$DIR" || true
 
-      # FIX：用最終 dist 目錄複製 404.html（避免 undefined 與錯誤路徑）
-      - name: Create 404.html for SPA               # FIX
+      - name: Create 404.html for SPA        # FIX：在「最終目錄」複製 404
         run: |
           DIR="${{ steps.dist_final.outputs.dir }}"
-          if [ -f "$DIR/index.html" ]; then
-            cp "$DIR/index.html" "$DIR/404.html"
-            echo "404.html created in $DIR"
-          else
-            echo "ERROR: index.html not found under $DIR"
-            exit 1
-          fi
+          cp "$DIR/index.html" "$DIR/404.html"
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      # FIX：上傳 artifact 使用最終 dist 目錄
-      - name: Upload artifact                       # FIX
+      - name: Upload artifact                # FIX：上傳「最終目錄」
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ steps.dist_final.outputs.dir }} # FIX
+          path: ${{ steps.dist_final.outputs.dir }}
 
   deploy:
     needs: build
@@ -89,6 +79,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
+      #（保持原樣）
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
