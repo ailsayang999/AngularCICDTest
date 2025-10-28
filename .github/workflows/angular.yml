@@ -2,16 +2,21 @@ name: Angular CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: {}   # 手動觸發
+    branches: ["main"]
+  workflow_dispatch: {}
+
+# ✅ NEW：給整個 workflow 必要的權限（很重要，否則會出現 Resource not accessible by integration）
+permissions:
+  contents: read
+  pages: write # NEW
+  id-token: write # NEW
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # NEW:（可選）避免無限等待
-    timeout-minutes: 20  # NEW
+    timeout-minutes: 20 # NEW:（可選）避免無限等待
 
     steps:
       - name: Checkout
@@ -20,8 +25,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -33,19 +38,18 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadless || echo "no tests"
 
       - name: Build for production
-        # NEW:（可選）給 build 多點記憶體；保留你的 base-href
         env:
-          NODE_OPTIONS: --max_old_space_size=4096   # NEW
+          NODE_OPTIONS: --max_old_space_size=4096
         run: npm run build -- --configuration production --base-href=/${{ github.event.repository.name }}/
 
       # NEW: 自動偵測 angular.json 的 outputPath（不再依賴 defaultProject，也不假設有 /browser）
-      - name: Detect dist path  # NEW
-        id: dist               # NEW
-        run: |                 # NEW
+      - name: Detect dist path
+        id: dist
+        run: |
           OUT=$(node -e "const a=require('./angular.json');const k=Object.keys(a.projects)[0];process.stdout.write(a.projects[k].architect.build.options.outputPath)")
           echo "out=$OUT" >> $GITHUB_OUTPUT
 
-      - name: Resolve final dist directory   # FIX：決定要用 base 還是 /browser
+      - name: Resolve final dist directory # FIX：決定要用 base 還是 /browser
         id: dist_final
         run: |
           BASE="${{ steps.dist.outputs.out }}"
@@ -58,7 +62,7 @@ jobs:
           echo "Final dist dir: $DIR"
           ls -la "$DIR" || true
 
-      - name: Create 404.html for SPA        # FIX：在「最終目錄」複製 404
+      - name: Create 404.html for SPA # FIX：在「最終目錄」複製 404
         run: |
           DIR="${{ steps.dist_final.outputs.dir }}"
           cp "$DIR/index.html" "$DIR/404.html"
@@ -66,9 +70,9 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
-          enablement: true   # 🔧 NEW：若尚未啟用 Pages，幫你自動啟用為「由 Actions 佈署」
+          enablement: true # 保留：若尚未啟用 Pages，幫你自動啟用為由 Actions 佈署
 
-      - name: Upload artifact                # FIX：上傳「最終目錄」
+      - name: Upload artifact # FIX：上傳「最終目錄」
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ steps.dist_final.outputs.dir }}
@@ -76,12 +80,12 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # 下方 permissions 可以保留（但有了全域 permissions 就不一定需要了）
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      #（保持原樣）
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
