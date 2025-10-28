@@ -65,6 +65,8 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true   # 🔧 NEW：若尚未啟用 Pages，幫你自動啟用為「由 Actions 佈署」
 
       - name: Upload artifact                # FIX：上傳「最終目錄」
         uses: actions/upload-pages-artifact@v3
